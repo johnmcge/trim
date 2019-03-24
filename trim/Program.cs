@@ -16,6 +16,10 @@ namespace trim
             deleteToEnd = 2,
         }
 
+        public static string baseFileName;
+        public static string fileExtension;
+        public static string inputFileName;
+
         static void Main(string[] args)
         {
             // trim.exe file -b: trim the begining
@@ -26,11 +30,9 @@ namespace trim
             //      remove everything after 1:00 
             //      ffmpeg -ss 00:00:00 -t 00:01:00 -i input.mp4 -acodec copy -vcodec copy output.mp4
             //
-
+            
             string usageString = GetUsageString();
-
             string trimType = null;
-            StringBuilder commandText = new StringBuilder();
 
             if (args.Length < 3)
             {
@@ -39,7 +41,7 @@ namespace trim
                 Console.WriteLine(usageString);
                 return;
             }
-            else if (args[0] == "-help")
+            else if (args[0] == "-help" || args[0] == "-h")
             {
                 Console.WriteLine(usageString);
                 return;
@@ -53,42 +55,39 @@ namespace trim
             {
                 trimType = "deleteToEnd";
             }
-            else if (args[1] == "-t")
-            {
-                trimType += "Test";
-            }
             else
             {
-                Console.WriteLine("Invalid command. Required: -b, -e, -t");
+                Console.WriteLine("Invalid command. Required: -b, -e ");
                 Console.WriteLine("");
                 Console.WriteLine(usageString);
                 return;
             }
 
-            string inputFileName = args[0];
+            inputFileName = args[0];
 
-            string[] parts = args[0].Split('.');
+            int baseFileNameLength = inputFileName.LastIndexOf(".");
 
-            string baseFileName = parts[0];
-            string fileExtension = "";
-            // check if extension exists, if so, store for use vs assuming mp4
-
-            if (parts.Length > 1)
+            if (baseFileNameLength > 0)
             {
-                if (String.Equals(parts[1].ToString(), "mp4", StringComparison.OrdinalIgnoreCase))
-                {
-                    fileExtension = "." + parts[1];
-                }
-                else
-                {
-                    Console.WriteLine("Invalid file extension. Only mp4 supported at this time");
-                    return;
-                }
+                baseFileName = inputFileName.Substring(0, baseFileNameLength);
+                fileExtension = inputFileName.Substring(baseFileNameLength, (inputFileName.Length - baseFileNameLength));
             }
             else
-                fileExtension = ".mp4";
+            {
+                Console.WriteLine("Invalid file name, no extension found.");
+                return;
+            }
 
-            inputFileName = baseFileName + fileExtension;
+            if (String.Equals(fileExtension, ".mp4", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(fileExtension, ".ts", StringComparison.OrdinalIgnoreCase))
+            {
+                // fileExtension = "." + parts[1];
+            }
+            else
+            {
+                Console.WriteLine("Invalid file extension. Only .mp4 and .ts supported at this time");
+                return;
+            }
 
 
             if (!File.Exists(inputFileName))
@@ -97,10 +96,9 @@ namespace trim
                 return;
             };
 
-            string outputFileName = genOutPutFileName(inputFileName);
 
-            // need to add validation for args[2]
-            // it must be of the form: N or NN or N:NN or NN:NN or N:NN:NN etc.
+            // outFile = parts[0] + "-trimmedFile." + parts[1];
+            string outputFileName = baseFileName + "-trimmedFile" + fileExtension;
 
             Console.WriteLine("trimType = " + trimType);
 
@@ -111,7 +109,9 @@ namespace trim
                 return;
             }
 
-            commandText.Append("-y -ss ");      // -y means overwrite files with same name!
+            StringBuilder commandText = new StringBuilder();
+
+            commandText.Append(" -y -ss ");      // -y means overwrite files with same name!
             if (trimType == "deleteBegining")
             {
                 commandText.Append(timeParameter);
@@ -132,10 +132,6 @@ namespace trim
                 commandText.Append(" -acodec copy -vcodec copy ");
                 commandText.Append(outputFileName);
             }
-            else
-            {
-
-            }
 
             if (File.Exists(outputFileName))
             {
@@ -143,14 +139,17 @@ namespace trim
                 {
                     File.Delete(outputFileName);
                 }
-                catch { };
+                catch
+                {
+                    Console.WriteLine(Environment.NewLine + "Error trying to delete existing outputFileName: " + outputFileName + Environment.NewLine);
+                    return;
+                }
             }
 
 
-
             Console.WriteLine();
             Console.WriteLine();
-            Console.WriteLine("ffmpeg.exe " + commandText.ToString());
+            Console.WriteLine("ffmpeg.exe" + commandText.ToString());
 
             using (Process process = new Process())
             {
@@ -161,32 +160,31 @@ namespace trim
                 process.WaitForExit();
             }
 
-
             if (File.Exists(outputFileName))
             {
                 try
                 {
-                    File.Delete(inputFileName);
-                    File.Move(outputFileName, inputFileName);
+                    File.Delete(inputFileName);                 // delete the original file
+                    File.Move(outputFileName, inputFileName);   // rename the newly trimmed file to name of original file
                 }
                 catch(Exception e)
                 {
-                    Console.WriteLine("");
+                    Console.WriteLine("Error deleting input file and/or renaming trimmed file to original file name.");
                     Console.WriteLine("Exception String:" );
                     Console.WriteLine(e.ToString());
                 };
-
             }
-
+            else
+            {
+                Console.WriteLine(Environment.NewLine + "Something went wrong. Expected output file was not found: " + outputFileName + Environment.NewLine);
+            }
 
         }
 
         static string getTimeParameter(string inputString)
         {
-            // need to add validation for args[2]
-            // it must be of the form: NN or N:NN or NN:NN or N:NNNN or NN:NN:NN
-
-            // currently only works for the NN form
+            // it must be of the form: N, NN, N:NN, NN:NN, N:NN:NN or NN:NN:NN
+            // really should verify that N values can be cast to int32
 
             if (inputString.Length == 1)
                 return "00:00:0" + inputString;
@@ -226,26 +224,8 @@ namespace trim
                 
                 return "-1";
             }
-
-
-
+            
             return "-1";
-        }
-
-        static string genOutPutFileName(string inputFileName)
-        {
-            // assumes no . in file name other than extension delimeter
-
-            String[] parts = inputFileName.Split('.');
-            string outFile = "";
-
-            if (parts.Length == 2)
-                outFile = parts[0] + "-trimmedFile." + parts[1];
-            else
-                outFile = parts[0] + "-trimmedFile." + parts[(parts.Length - 1)];
-
-
-            return outFile;
         }
 
 
@@ -253,8 +233,7 @@ namespace trim
         {
             StringBuilder sbUsage = new StringBuilder();
 
-            sbUsage.Append(" trim.exe filename -b timeString");
-            sbUsage.Append("\r\n");
+            sbUsage.Append(" trim.exe filename -b timeString" + Environment.NewLine);
             sbUsage.Append(" trim the begnining: delete part of movie between 00:00:00 and timeString");
             sbUsage.Append("\r\n");
             sbUsage.Append("\r\n");
